@@ -1684,11 +1684,12 @@
   $('olBtn').onclick = function(){
     var p = $('olPanel'); p.style.display = (p.style.display === 'none' || !p.style.display) ? 'block' : 'none';
   };
-  $('olJoin').onclick = function(){
+  function defaultWsUrl(){ return (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws'; }
+  function joinRoom(){
     if (ws && ws.readyState === 1) { status('Bạn đã ở trong phòng rồi.'); return; }
     myName = $('olName').value.trim(); myRoom = $('olRoom').value.trim();
     if (!myName || !myRoom) { status('Nhập tên và mã phòng trước.'); return; }
-    var url = $('olServer').value.trim() || 'ws://localhost:8080/ws';
+    var url = $('olServer').value.trim() || defaultWsUrl();
     status('Đang kết nối...');
     ws = new WebSocket(url);
     ws.onopen = function(){ ws.send(JSON.stringify({ type: 'join', name: myName, room: myRoom })); };
@@ -1717,6 +1718,7 @@
       if (myId) { myId = null; isAdmin = false; clearRemotes(); $('olCloseRoom').style.display = 'none'; $('olPlayers').innerHTML = ''; }
     };
   };
+  $('olJoin').onclick = joinRoom;
   $('olLeave').onclick = function(){ if (ws) ws.send(JSON.stringify({ type: 'leave' })); resetToSolo('Đã rời phòng — chơi solo bình thường.'); };
   $('olCloseRoom').onclick = function(){ if (ws && isAdmin) ws.send(JSON.stringify({ type: 'close' })); };
   function sendChat(){
@@ -1725,6 +1727,28 @@
   }
   $('olChatSend').onclick = sendChat;
   $('olChatInput').addEventListener('keydown', function(e){ if (e.key === 'Enter') sendChat(); });
+  // Join from a shared link: ?room=CODE&name=NAME&server=...
+  // No room param = manual mode, but the server field still defaults to
+  // this page's own host (wss on https, ws on http) instead of localhost,
+  // so a Codespaces link works without typing the server address.
+  // Room + name in the link = auto-join immediately (for the room owner).
+  // Room only, no name = the guest creates their character: the room and
+  // server are pre-filled, the panel opens, the name box is focused, and
+  // the guest types a name and presses Join (or Enter) to enter the room.
+  // No random guest name is invented — the guest always names themselves.
+  (function(){
+    var q = new URLSearchParams(location.search);
+    var room = (q.get('room') || '').trim();
+    if (!room) { $('olServer').value = defaultWsUrl(); return; }
+    var name = (q.get('name') || '').trim();
+    $('olRoom').value = room;
+    $('olServer').value = (q.get('server') || '').trim() || defaultWsUrl();
+    $('olPanel').style.display = 'block';
+    if (name) { $('olName').value = name; setTimeout(joinRoom, 300); }
+    else { $('olName').focus(); }
+  })();
+  $('olName').addEventListener('keydown', function(e){ if (e.key === 'Enter') joinRoom(); });
+  $('olRoom').addEventListener('keydown', function(e){ if (e.key === 'Enter') joinRoom(); });
   // Broadcast local movement at 10 Hz (not every frame), only when changed.
   setInterval(function(){
     if (!ws || ws.readyState !== 1 || !myId) return;
