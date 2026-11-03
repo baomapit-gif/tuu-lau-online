@@ -1639,7 +1639,10 @@
 <!-- ONLINE PANEL (core only, no new assets): private room, chat, admin kick/mute/close -->
 <div id="olBtn" style="position:fixed;top:10px;right:10px;z-index:60;padding:8px 12px;border:1px solid rgba(255,207,135,.5);background:rgba(30,11,8,.9);color:#f7ecd2;border-radius:8px;cursor:pointer;font-size:13px;">🛜 Online</div>
 <div id="olPanel" style="display:none;position:fixed;top:48px;right:10px;z-index:60;width:290px;max-height:70vh;overflow:auto;padding:12px;border:1px solid rgba(255,207,135,.5);background:rgba(30,11,8,.94);color:#f7ecd2;border-radius:10px;font-size:13px;line-height:1.5;">
-  <div style="font-weight:700;color:#ffcf87;">PHÒNG ONLINE (nội bộ)</div>
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+    <div style="font-weight:700;color:#ffcf87;">PHÒNG ONLINE (nội bộ)</div>
+    <button id="olHide" type="button" title="Ẩn panel, vẫn ở trong phòng" style="flex:0 0 auto;min-width:44px;min-height:44px;padding:6px 10px;border-radius:8px;border:1px solid rgba(255,207,135,.5);background:rgba(46,32,22,.9);color:#f7ecd2;font-size:16px;font-weight:700;cursor:pointer;">✕ Ẩn</button>
+  </div>
   <div id="olStatus" style="color:#d8bd93;">Chưa vào phòng — chơi solo bình thường.</div>
   <div style="margin-top:8px;"><input id="olName" placeholder="Tên của bạn" maxlength="20" style="width:100%;padding:7px;border-radius:6px;border:1px solid #555;background:#140f0c;color:#f7ecd2;">
   <input id="olRoom" placeholder="Mã phòng (vd: LAU01)" maxlength="12" style="width:100%;padding:7px;margin-top:6px;border-radius:6px;border:1px solid #555;background:#140f0c;color:#f7ecd2;">
@@ -1744,6 +1747,10 @@
   $('olBtn').onclick = function(){
     var p = $('olPanel'); p.style.display = (p.style.display === 'none' || !p.style.display) ? 'block' : 'none';
   };
+  // The panel auto-opens when a guest joins from a shared link, so it
+  // needs its own obvious Hide button: hiding the panel never leaves
+  // the room, and tapping the 🛜 Online button reopens it any time.
+  $('olHide').onclick = function(){ $('olPanel').style.display = 'none'; };
   function defaultWsUrl(){ return (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws'; }
   function joinRoom(){
     if (ws && ws.readyState === 1) { status('Bạn đã ở trong phòng rồi.'); return; }
