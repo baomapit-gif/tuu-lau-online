@@ -1636,11 +1636,17 @@
     var hair = new THREE.Mesh(new THREE.SphereGeometry(0.315, 28, 22), hairM); hair.scale.set(1, 0.8, 1); hair.position.set(0, 1.455, -0.025); g.add(hair);
     var band = new THREE.Mesh(new THREE.TorusGeometry(0.295, 0.032, 8, 24), mat(0xc22f27));
     band.rotation.x = Math.PI/2 - 0.12; band.position.set(0, 1.51, 0.01); g.add(band);
-    [-0.11, 0.11].forEach(function(lx){
-      var leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, 0.26, 4, 10), mat(0x2b2b30));
-      leg.position.set(lx, 0.28, 0); g.add(leg);
-    });
+    // Legs and arms pivot at the top (geometry translated down), so
+    // swinging rotation.x looks like walking from the hip/shoulder,
+    // matching the local character's walk pose.
+    var legGeo = new THREE.CapsuleGeometry(0.075, 0.26, 4, 10); legGeo.translate(0, -0.205, 0);
+    var legL = new THREE.Mesh(legGeo, mat(0x2b2b30)); legL.position.set(-0.11, 0.485, 0); g.add(legL);
+    var legR = new THREE.Mesh(legGeo, mat(0x2b2b30)); legR.position.set(0.11, 0.485, 0); g.add(legR);
+    var armGeo = new THREE.CapsuleGeometry(0.06, 0.22, 4, 10); armGeo.translate(0, -0.18, 0);
+    var armL = new THREE.Mesh(armGeo, outfit); armL.position.set(-0.33, 1.05, 0); armL.rotation.z = 0.1; g.add(armL);
+    var armR = new THREE.Mesh(armGeo, outfit); armR.position.set(0.33, 1.05, 0); armR.rotation.z = -0.1; g.add(armR);
     var label = labelSprite(name, colorIdx); g.add(label);
+    g.userData.walk = { legL: legL, legR: legR, armL: armL, armR: armR, phase: 0 };
     return g;
   }
   function renderPlayers(players){
@@ -1666,7 +1672,7 @@
     var g = makeRemote(p.name, colorIdx);
     g.position.set(p.x || 0, 0, p.z || 2.6); g.rotation.y = p.ry || Math.PI;
     hook.scene.add(g);
-    remotes[p.id] = { group: g, tx: p.x || 0, tz: p.z || 2.6, try_: p.ry || Math.PI, name: p.name };
+    remotes[p.id] = { group: g, tx: p.x || 0, tz: p.z || 2.6, try_: p.ry || Math.PI, name: p.name, walk: g.userData.walk };
   }
   function removeRemote(id){
     var r = remotes[id]; if (!r) return;
@@ -1761,16 +1767,33 @@
       lastSent = { x: x, z: z, ry: ry }; lastSentAt = now;
     }
   }, 100);
-  // Smooth remote movement (lerp toward server target each frame).
+  // Smooth remote movement (lerp toward server target each frame),
+  // with the same walk pose as the local character: legs and arms
+  // swing and the body bobs while the remote is actually moving,
+  // and return to a still idle pose when it stops.
   (function loop(){
     requestAnimationFrame(loop);
     Object.keys(remotes).forEach(function(id){
       var r = remotes[id]; if (!r) return;
-      r.group.position.x += (r.tx - r.group.position.x) * 0.25;
-      r.group.position.z += (r.tz - r.group.position.z) * 0.25;
+      var dx = r.tx - r.group.position.x, dz = r.tz - r.group.position.z;
+      var moving = Math.sqrt(dx * dx + dz * dz) > 0.02;
+      r.group.position.x += dx * 0.25;
+      r.group.position.z += dz * 0.25;
       var diff = r.try_ - r.group.rotation.y;
       while (diff > Math.PI) diff -= Math.PI * 2; while (diff < -Math.PI) diff += Math.PI * 2;
       r.group.rotation.y += diff * 0.25;
+      var w = r.walk; if (!w) return;
+      if (moving) {
+        w.phase += 0.3;
+        var s = Math.sin(w.phase);
+        w.legL.rotation.x = s * 0.6; w.legR.rotation.x = -s * 0.6;
+        w.armL.rotation.x = s * 0.55; w.armR.rotation.x = -s * 0.55;
+        r.group.position.y = Math.abs(s) * 0.045;
+      } else {
+        w.legL.rotation.x = 0; w.legR.rotation.x = 0;
+        w.armL.rotation.x = 0; w.armR.rotation.x = 0;
+        r.group.position.y = 0;
+      }
     });
   })();
 })();
