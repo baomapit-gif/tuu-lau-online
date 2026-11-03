@@ -21,6 +21,9 @@
       }
       *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
       html,body{ height:100%; }
+      /* On phone browsers the address bar shrinks/grows the viewport;
+         dvh tracks the visible height so the canvas is never cut off. */
+      html,body{ height:100dvh; }
       body{
         margin:0; overflow:hidden; background:#140f0c; color:var(--ink);
         font-family:"Be Vietnam Pro","Segoe UI",system-ui,-apple-system,sans-serif;
@@ -159,16 +162,35 @@
         #meBtn .sub{ display:none; }
         #helpLine{ display:none; }
         #zoneTag{ left:auto; right:10px; top:60px; transform:none; font-size:12px; padding:6px 12px; }
+        /* Single swipeable row instead of wrapping to 2 rows, so the
+           3D view keeps its height and every button stays reachable. */
         #actionBar{
           left:8px; right:8px; transform:none; bottom:calc(8px + env(safe-area-inset-bottom));
-          justify-content:center; gap:6px; padding:7px;
+          justify-content:flex-start; gap:6px; padding:7px;
+          flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch;
         }
-        #joy{ bottom:calc(128px + env(safe-area-inset-bottom)); width:100px; height:100px; }
+        /* Touch targets at least 44px tall, so a thumb tap never misses. */
+        .actBtn{ padding:12px 14px; font-size:13px; min-height:44px; }
+        #joy{ bottom:calc(96px + env(safe-area-inset-bottom)); width:120px; height:120px; }
+        #joyKnob{ width:60px; height:60px; }
         #joyHint{ display:none; }
-        #miniBtns{ bottom:calc(128px + env(safe-area-inset-bottom)); }
-        .actBtn{ padding:9px 11px; font-size:12.5px; }
+        #miniBtns{ bottom:calc(96px + env(safe-area-inset-bottom)); }
+        .miniBtn{ width:48px; height:48px; }
         #toast{ bottom:calc(215px + env(safe-area-inset-bottom)); }
+        /* Inputs at 16px so iOS Safari does not zoom the page when the
+           keyboard opens; the Online panel fits narrow phones. */
+        input, textarea{ font-size:16px; }
+        .panel{ padding:16px; }
+        /* The Online button is inline-styled at top-right, same spot as
+           the character button, so drop it below that button on phones
+           and let the panel use the full narrow width. */
+        #olBtn{ top:64px !important; }
+        #olPanel{ width:calc(100vw - 20px) !important; max-width:320px; }
       }
+      /* Online panel: scrollable on touch, fits narrow phones, no iOS zoom. */
+      #olPanel{ touch-action:pan-y; }
+      #olPanel input, #olPanel button{ font-size:16px; }
+      #olPanel button{ min-height:44px; }
     </style>
   </head>
   <body>
@@ -332,8 +354,12 @@
     function start(){
     /* ================= Renderer / Scene ================= */
     var container = document.getElementById('scene');
-    var renderer = new THREE.WebGLRenderer({ antialias:true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    // Phone browsers: cap the pixel ratio and skip antialiasing, which
+    // is the biggest GPU cost on a small screen, and halve the shadow
+    // map. Desktop keeps the full-quality settings unchanged.
+    var isPhone = (window.innerWidth <= 640) || (window.matchMedia && window.matchMedia('(pointer:coarse)').matches);
+    var renderer = new THREE.WebGLRenderer({ antialias: !isPhone });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isPhone ? 1.5 : 2));
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -453,7 +479,7 @@
     var key = new THREE.DirectionalLight(0xffd9a3, 1.35);
     key.position.set(7, 10.5, 5);
     key.castShadow = true;
-    key.shadow.mapSize.set(2048, 2048);
+    key.shadow.mapSize.set(isPhone ? 1024 : 2048, isPhone ? 1024 : 2048);
     key.shadow.camera.left = -15; key.shadow.camera.right = 15;
     key.shadow.camera.top = 12; key.shadow.camera.bottom = -12;
     key.shadow.camera.far = 32; key.shadow.bias = -0.0006;
@@ -1193,18 +1219,42 @@
 
     var dragId = null, lastPX = 0, lastPY = 0;
     var cvs = renderer.domElement;
+    // Two-finger pinch zooms the camera on phones (no mouse wheel there).
+    // While pinching, single-finger camera rotation pauses; when one
+    // finger lifts, rotation resumes from the remaining finger.
+    var camPointers = {}, pinchDist = 0;
+    function pinchDistance(){
+      var ids = Object.keys(camPointers); if (ids.length < 2) return 0;
+      var a = camPointers[ids[0]], b = camPointers[ids[1]];
+      return Math.hypot(a.x - b.x, a.y - b.y);
+    }
     cvs.addEventListener('pointerdown', function(e){
-      dragId = e.pointerId; lastPX = e.clientX; lastPY = e.clientY;
+      camPointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+      if (Object.keys(camPointers).length === 2){ dragId = null; pinchDist = pinchDistance(); }
+      else { dragId = e.pointerId; lastPX = e.clientX; lastPY = e.clientY; }
       ensureAudio();
     });
     cvs.addEventListener('pointermove', function(e){
+      if (!camPointers[e.pointerId]) return;
+      camPointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+      if (Object.keys(camPointers).length === 2){
+        var d = pinchDistance();
+        if (pinchDist > 0 && d > 0) camDist = Math.max(3, Math.min(11, camDist * pinchDist / d));
+        pinchDist = d; return;
+      }
       if (e.pointerId !== dragId) return;
       camYaw -= (e.clientX - lastPX) * 0.0052;
       camPitch += (e.clientY - lastPY) * 0.004;
       camPitch = Math.max(0.1, Math.min(1.25, camPitch));
       lastPX = e.clientX; lastPY = e.clientY;
     });
-    function dragEnd(e){ if (e.pointerId === dragId) dragId = null; }
+    function dragEnd(e){
+      delete camPointers[e.pointerId];
+      if (e.pointerId === dragId) dragId = null;
+      var ids = Object.keys(camPointers);
+      if (ids.length === 1){ dragId = ids[0]; lastPX = camPointers[ids[0]].x; lastPY = camPointers[ids[0]].y; }
+      else pinchDist = 0;
+    }
     cvs.addEventListener('pointerup', dragEnd);
     cvs.addEventListener('pointercancel', dragEnd);
     cvs.addEventListener('wheel', function(e){
@@ -1568,11 +1618,15 @@
       }
     }
 
-    window.addEventListener('resize', function(){
+    function onResize(){
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
-    });
+    }
+    window.addEventListener('resize', onResize);
+    // iOS Safari changes the visible height when the address bar hides
+    // or the keyboard opens; visualViewport fires for those changes.
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', onResize);
 
     refreshStats();
     animate();
