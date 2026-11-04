@@ -72,7 +72,7 @@ const httpServer = http.createServer((req, res) => {
 const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
 
 wss.on('connection', (ws) => {
-  const client = { ws, id: null, name: '', room: null, admin: false, muted: false, x: 0, z: 2.6, ry: Math.PI, lastMove: 0, skin: null };
+  const client = { ws, id: null, name: '', room: null, admin: false, muted: false, x: 0, z: 2.6, ry: Math.PI, lastMove: 0, skin: null, clientType: 'player' };
 
   ws.on('message', (raw) => {
     let msg;
@@ -104,8 +104,14 @@ wss.on('connection', (ws) => {
       client.id = 'p' + (nextId++);
       client.name = name;
       client.skin = typeof msg.skin === 'string' ? msg.skin.slice(0, 20) : null;
+      // Admin/player split: only the admin build can ever be admin.
+      // A player build entering first does NOT become admin, so Bao
+      // joining later from the admin build still takes admin.
+      client.clientType = msg.clientType === 'admin' ? 'admin' : 'player';
+      const hasAdmin = [...room.players.values()].some((pp) => pp.admin);
+      client.admin = client.clientType === 'admin' && !hasAdmin;
       client.room = room;
-      client.admin = room.players.size === 0; // first player = creator = admin
+      // (admin assignment above replaces first-player-wins)
       room.players.set(client.id, client);
       send(ws, { type: 'welcome', id: client.id, admin: client.admin, room: code, players: [...room.players.values()].map(publicPlayer) });
       broadcast(room, { type: 'player_joined', player: publicPlayer(client) }, client);
@@ -188,11 +194,17 @@ wss.on('connection', (ws) => {
       return;
     }
     if (wasAdmin) {
-      // Promote the oldest remaining player so the room survives.
-      const next = [...room.players.values()][0];
-      next.admin = true;
-      send(next.ws, { type: 'admin_promoted' });
-      broadcast(room, { type: 'chat', from: 'system', name: 'Hệ thống', text: next.name + ' trở thành admin phòng.', at: Date.now() });
+      // Promote only the oldest remaining ADMIN-build player, never a
+      // player-build client. If none, the room simply has no admin
+      // until an admin-build client joins and takes it.
+      const next = [...room.players.values()].find((pp) => pp.clientType === 'admin');
+      if (next) {
+        next.admin = true;
+        send(next.ws, { type: 'admin_promoted' });
+        broadcast(room, { type: 'chat', from: 'system', name: 'Hệ thống', text: next.name + ' trở thành admin phòng.', at: Date.now() });
+      } else {
+        broadcast(room, { type: 'chat', from: 'system', name: 'Hệ thống', text: 'Phòng đang không có admin, chờ bản admin vào.', at: Date.now() });
+      }
     }
     sendPlayerList(room);
   });

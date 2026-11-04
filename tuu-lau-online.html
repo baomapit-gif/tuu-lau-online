@@ -1738,6 +1738,7 @@
     </script>
 
 <!-- ONLINE PANEL (core only, no new assets): private room, chat, admin kick/mute/close -->
+<div id="adminBtn" style="display:none;position:fixed;top:10px;right:112px;z-index:60;padding:8px 12px;border:1px solid #ffcf87;background:#5a1010;color:#fff;border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;">👑 Admin</div>
 <div id="olBtn" style="position:fixed;top:10px;right:10px;z-index:60;padding:8px 12px;border:1px solid rgba(255,207,135,.5);background:rgba(30,11,8,.9);color:#f7ecd2;border-radius:8px;cursor:pointer;font-size:13px;">🛜 Online</div>
 <div id="olPanel" style="display:none;position:fixed;top:48px;right:10px;z-index:60;width:290px;max-height:70vh;overflow:auto;padding:12px;border:1px solid rgba(255,207,135,.5);background:rgba(30,11,8,.94);color:#f7ecd2;border-radius:10px;font-size:13px;line-height:1.5;">
   <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
@@ -1753,6 +1754,8 @@
     <button id="olLeave" style="flex:1;padding:8px;border-radius:6px;border:1px solid #555;background:#333;color:#fff;cursor:pointer;">Rời phòng</button>
   </div>
   <button id="olCloseRoom" style="display:none;width:100%;margin-top:6px;padding:8px;border-radius:6px;border:1px solid #c22f27;background:#5a1010;color:#fff;cursor:pointer;">Admin: Đóng phòng</button>
+  <button id="olAdminBtn" type="button" style="width:100%;margin-top:6px;padding:10px;border-radius:8px;border:1px solid #ffcf87;background:#5a1010;color:#fff;cursor:pointer;font-weight:700;font-size:15px;">👑 Bảng Admin</button>
+  <div id="olAdminStatus" style="margin-top:6px;color:#ffcf87;font-weight:700;">Chưa vào phòng.</div>
   <div style="margin-top:10px;font-weight:700;">Người trong phòng:</div>
   <ul id="olPlayers" style="margin:4px 0 0 16px;padding:0;"></ul>
   <div id="olChat" style="margin-top:10px;height:130px;overflow:auto;border:1px solid #444;border-radius:6px;padding:6px;background:#140f0c;"></div>
@@ -1760,7 +1763,20 @@
     <input id="olChatInput" placeholder="Nhắn..." maxlength="200" style="flex:1;padding:7px;border-radius:6px;border:1px solid #555;background:#140f0c;color:#f7ecd2;">
     <button id="olChatSend" style="padding:7px 12px;border-radius:6px;background:#7c1a16;color:#fff;border:1px solid rgba(255,207,135,.5);cursor:pointer;">Gửi</button>
   </div>
-  <div style="color:#d8bd93;margin-top:6px;">Người tạo phòng đầu tiên là admin. Chỉ người có mã phòng mới vào được, tối đa 6 người.</div>
+  <div style="color:#d8bd93;margin-top:6px;">Bản admin mới làm admin, bản người chơi không bao giờ làm admin. Giữ link bản admin riêng, chỉ gửi link người chơi ra ngoài. Tối đa 6 người/phòng.</div>
+</div>
+<div class="scrim" id="adminModal" hidden>
+  <div class="panel">
+    <h2>👑 Bảng Admin</h2>
+    <p id="adminStatus" style="font-weight:700;color:#ffcf87;">Chưa vào phòng.</p>
+    <p id="adminRoomInfo"></p>
+    <div id="adminList"></div>
+    <div class="btnRow">
+      <button class="pBtn" id="adminCloseRoomBtn" type="button" style="background:#5a1010;color:#fff;min-height:44px;">🔒 Đóng phòng (đuổi tất cả)</button>
+      <button class="pBtn" id="adminCloseModalBtn" type="button" style="min-height:44px;">Đóng bảng</button>
+    </div>
+    <p id="adminHelp" style="font-size:13px;opacity:.9;"></p>
+  </div>
 </div>
 <script>
 (function(){
@@ -1819,8 +1835,53 @@
     g.userData.walk = { legL: legL, legR: legR, armL: armL, armR: armR, phase: 0 };
     return g;
   }
+  var lastPlayers = [];
   function renderPlayers(players){
+    lastPlayers = players ? players.slice() : [];
     var ul = $('olPlayers'); ul.innerHTML = '';
+    var aStatus = $('adminStatus'), aInfo = $('adminRoomInfo'), aList = $('adminList'), aHelp = $('adminHelp');
+    if (aStatus) {
+      if (!myId) {
+        aStatus.textContent = 'Chưa vào phòng.';
+        if (aInfo) aInfo.textContent = '';
+        if (aList) aList.innerHTML = '';
+        if (aHelp) aHelp.textContent = 'Vào phòng bằng link bản admin, mã phòng mới chưa ai dùng, vào trước thì mày mới là admin.';
+        $('olAdminStatus').textContent = 'Chưa vào phòng.';
+        $('adminBtn').style.display = 'none';
+      } else if (isAdmin) {
+        aStatus.textContent = 'Bạn là ADMIN 👑 — có đủ quyền Kick, Mute, Đóng phòng.';
+        if (aInfo) aInfo.textContent = 'Phòng: ' + myRoom + ' — ' + players.length + '/6 người.';
+        if (aHelp) aHelp.textContent = 'Bấm Kick là đuổi người đó khỏi phòng ngay, Mute là chặn chat, Đóng phòng là đuổi tất cả và xóa phòng.';
+        $('olAdminStatus').textContent = 'Bạn là ADMIN 👑';
+        $('adminBtn').style.display = 'block';
+      } else {
+        aStatus.textContent = 'Bạn đang là KHÁCH — không có quyền admin, nên không có nút Kick/Mute/Đóng phòng.';
+        if (aInfo) aInfo.textContent = 'Phòng: ' + myRoom + ' — ' + players.length + '/6 người.';
+        if (aHelp) aHelp.textContent = 'Muốn làm admin: rời phòng, dùng link bản admin, mã phòng mới chưa ai dùng, vào trước. Bản người chơi gửi ra ngoài không bao giờ thành admin.';
+        $('olAdminStatus').textContent = 'Bạn là khách — không có quyền admin.';
+        $('adminBtn').style.display = 'block';
+      }
+      $('adminCloseRoomBtn').style.display = isAdmin ? 'block' : 'none';
+      if (aList) {
+        aList.innerHTML = '';
+        players.forEach(function(pp){
+          var row = document.createElement('div');
+          row.style.cssText = 'display:flex;align-items:center;gap:8px;margin:8px 0;padding:8px;border:1px solid #555;border-radius:8px;';
+          var nm = document.createElement('span');
+          nm.style.flex = '1';
+          nm.textContent = pp.name + (pp.admin ? ' 👑 admin' : '') + (pp.muted ? ' 🔇' : '') + (pp.id === myId ? ' (bạn)' : '');
+          row.appendChild(nm);
+          if (isAdmin && pp.id !== myId) {
+            var kb = document.createElement('button'); kb.textContent = 'Kick'; kb.style.cssText = 'min-width:64px;min-height:44px;padding:8px;border-radius:8px;background:#a11;color:#fff;cursor:pointer;font-weight:700;';
+            kb.onclick = function(){ if (ws) ws.send(JSON.stringify({ type: 'kick', targetId: pp.id })); };
+            var mb = document.createElement('button'); mb.textContent = pp.muted ? 'Unmute' : 'Mute'; mb.style.cssText = 'min-width:76px;min-height:44px;padding:8px;border-radius:8px;background:#333;color:#fff;cursor:pointer;';
+            mb.onclick = function(){ if (ws) ws.send(JSON.stringify({ type: 'mute', targetId: pp.id, muted: !pp.muted })); };
+            row.appendChild(kb); row.appendChild(mb);
+          }
+          aList.appendChild(row);
+        });
+      }
+    }
     players.forEach(function(p, idx){
       var li = document.createElement('li');
       li.textContent = p.name + (p.admin ? ' 👑 admin' : '') + (p.muted ? ' 🔇' : '') + (p.id === myId ? ' (bạn)' : '');
@@ -1858,6 +1919,7 @@
   function resetToSolo(msg){
     if (ws){ try { ws.close(); } catch(e){} ws = null; }
     myId = null; isAdmin = false; clearRemotes();
+    $('adminBtn').style.display = 'none'; $('adminModal').hidden = true;
     $('olCloseRoom').style.display = 'none';
     $('olPlayers').innerHTML = '';
     status(msg || 'Đã rời phòng — chơi solo bình thường.');
@@ -1865,6 +1927,10 @@
   $('olBtn').onclick = function(){
     var p = $('olPanel'); p.style.display = (p.style.display === 'none' || !p.style.display) ? 'block' : 'none';
   };
+  $('adminBtn').onclick = function(){ $('adminModal').hidden = false; renderPlayers(lastPlayers); };
+  $('olAdminBtn').onclick = function(){ $('adminModal').hidden = false; renderPlayers(lastPlayers); };
+  $('adminCloseModalBtn').onclick = function(){ $('adminModal').hidden = true; };
+  $('adminCloseRoomBtn').onclick = function(){ if (ws && isAdmin) ws.send(JSON.stringify({ type: 'close' })); };
   // The panel auto-opens when a guest joins from a shared link, so it
   // needs its own obvious Hide button: hiding the panel never leaves
   // the room, and tapping the 🛜 Online button reopens it any time.
@@ -1879,13 +1945,13 @@
     ws = new WebSocket(url);
     ws.onopen = function(){
       var hook = window.__TL_ONLINE;
-      ws.send(JSON.stringify({ type: 'join', name: myName, room: myRoom, skin: hook && hook.getSkin ? hook.getSkin() : null }));
+      ws.send(JSON.stringify({ type: 'join', name: myName, room: myRoom, skin: hook && hook.getSkin ? hook.getSkin() : null, clientType: 'admin' }));
     };
     ws.onmessage = function(ev){
       var m; try { m = JSON.parse(ev.data); } catch(e){ return; }
       if (m.type === 'welcome'){
         myId = m.id; isAdmin = !!m.admin;
-        $('olCloseRoom').style.display = isAdmin ? 'block' : 'none';
+        $('olCloseRoom').style.display = isAdmin ? 'block' : 'none'; $('adminBtn').style.display = 'block';
         status('Đã vào phòng ' + m.room + (isAdmin ? ' — bạn là ADMIN.' : ' — khách.'));
         m.players.forEach(ensureRemote); renderPlayers(m.players);
       } else if (m.type === 'player_joined'){ ensureRemote(m.player); chatLine('Hệ thống', m.player.name + ' đã vào phòng.'); }
@@ -1897,14 +1963,14 @@
       else if (m.type === 'kicked'){ chatLine('Hệ thống', m.reason || 'Bạn đã bị kick.'); resetToSolo('Bạn đã bị admin kick — không vào lại phòng này trong phiên này được.'); }
       else if (m.type === 'room_closed'){ chatLine('Hệ thống', m.reason || 'Phòng đã đóng.'); resetToSolo('Phòng đã đóng — chơi solo bình thường.'); }
       else if (m.type === 'muted'){ mutedMe = !!m.muted; status(mutedMe ? 'Bạn đang bị mute.' : 'Bạn đã được unmute.'); }
-      else if (m.type === 'admin_promoted'){ isAdmin = true; $('olCloseRoom').style.display = 'block'; status('Bạn trở thành ADMIN phòng.'); }
+      else if (m.type === 'admin_promoted'){ isAdmin = true; $('olCloseRoom').style.display = 'block'; $('adminBtn').style.display = 'block'; renderPlayers(lastPlayers); status('Bạn trở thành ADMIN phòng.'); }
       else if (m.type === 'error'){ status('Lỗi: ' + m.message); if (m.message.indexOf('kick') >= 0) { /* stay, do not auto-rejoin */ } }
     };
     ws.onclose = function(){
       if (myId !== null) { /* kicked/closed already handled via messages; plain close = back to solo */ }
       if (ws) { ws = null; }
       // Do not auto-reconnect: a kicked player must not silently rejoin.
-      if (myId) { myId = null; isAdmin = false; clearRemotes(); $('olCloseRoom').style.display = 'none'; $('olPlayers').innerHTML = ''; }
+      if (myId) { myId = null; isAdmin = false; clearRemotes(); $('adminBtn').style.display = 'none'; $('adminModal').hidden = true; $('olCloseRoom').style.display = 'none'; $('olPlayers').innerHTML = ''; }
     };
   };
   $('olJoin').onclick = joinRoom;
