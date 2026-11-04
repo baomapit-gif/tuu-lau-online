@@ -285,7 +285,7 @@
             <button class="pBtn skinBtn" type="button" data-skin="thaigiam" title="Thái Giám"><img src="characters/thaigiam.png" alt="Thái Giám" style="height:64px;width:auto;display:block"><span>Thái Giám</span></button>
             <button class="pBtn skinBtn" type="button" data-skin="caibang" title="Cái Bang"><img src="characters/caibang.png" alt="Cái Bang" style="height:64px;width:auto;display:block"><span>Cái Bang</span></button>
           </div>
-          <p style="font-size:13px;opacity:.85">Chọn 1 con 2D thì nhân vật của mày đổi thành ảnh đó, đi lại vẫn nhún theo bước chân, người khác trong phòng cũng thấy đúng con mày chọn. Tiểu Nhị riêng còn làm NPC phục vụ, có 3 con đi lại trong quán, không cần chọn.</p>
+          <p style="font-size:13px;opacity:.85">Mặc định vào game là random 1 trong 5 con (Pháp Sư, Mèo Võ Sĩ, Kiếm Khách, Thái Giám, Cái Bang), trừ Tiểu Nhị vì Tiểu Nhị chỉ làm NPC phục vụ. Muốn đổi con khác thì bấm con đó, bấm 3D gốc là về nhân vật 3D cũ. Người khác trong phòng cũng thấy đúng con mày chọn.</p>
         </div>
         <div class="btnRow">
           <button class="pBtn primary" id="charEnterBtn" type="button">Bước vào giang hồ</button>
@@ -1125,6 +1125,23 @@
         scene.add(lab);
         npcTieunhi.push({ sp: sp, lab: lab, r: r });
       });
+    })();
+    /* Default for guests/players: random from the 5 non-NPC skins, never 3D and never Tieu Nhi.
+       Tieu Nhi is NPC-only. This runs once at load, before any room join,
+       so the random skin is sent in the join message and other players
+       see the same character, not a different random per viewer. */
+    (function(){
+      var pool = [];
+      for (var pi=0; pi<SKINS.length; pi++) if (SKINS[pi].id !== 'tieunhi') pool.push(SKINS[pi]);
+      var pick = pool[Math.floor(Math.random() * pool.length)];
+      setSkin(pick.id);
+      var row = document.getElementById('skinRow');
+      if (row) {
+        var btns = row.querySelectorAll('.skinBtn');
+        for (var bi=0; bi<btns.length; bi++) btns[bi].classList.remove('on');
+        var chosen = row.querySelector('[data-skin="' + pick.id + '"]');
+        if (chosen) chosen.classList.add('on');
+      }
     })();
     window.__TL_ONLINE = { scene: scene, player: player, getFacing: function(){ return facing; }, setSkin: setSkin, getSkin: function(){ return currentSkin ? currentSkin.id : null; }, SKINS: SKINS, makeSkinSprite: makeSkinSprite };
 
