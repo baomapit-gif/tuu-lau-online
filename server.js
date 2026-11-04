@@ -17,7 +17,7 @@ const PORT = Number(process.env.PORT || 8080);
 const MAX_PLAYERS = 6;
 const ROOT = __dirname;
 
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.css': 'text/css; charset=utf-8' };
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg' };
 
 function normName(s) {
   return String(s || '').trim().slice(0, 20);
@@ -34,7 +34,7 @@ const rooms = new Map(); // code -> room
 let nextId = 1;
 
 function publicPlayer(p) {
-  return { id: p.id, name: p.name, admin: p.admin, muted: p.muted, x: p.x, z: p.z, ry: p.ry };
+  return { id: p.id, name: p.name, admin: p.admin, muted: p.muted, x: p.x, z: p.z, ry: p.ry, skin: p.skin || null };
 }
 function broadcast(room, obj, except) {
   const data = JSON.stringify(obj);
@@ -72,7 +72,7 @@ const httpServer = http.createServer((req, res) => {
 const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
 
 wss.on('connection', (ws) => {
-  const client = { ws, id: null, name: '', room: null, admin: false, muted: false, x: 0, z: 2.6, ry: Math.PI, lastMove: 0 };
+  const client = { ws, id: null, name: '', room: null, admin: false, muted: false, x: 0, z: 2.6, ry: Math.PI, lastMove: 0, skin: null };
 
   ws.on('message', (raw) => {
     let msg;
@@ -103,6 +103,7 @@ wss.on('connection', (ws) => {
       }
       client.id = 'p' + (nextId++);
       client.name = name;
+      client.skin = typeof msg.skin === 'string' ? msg.skin.slice(0, 20) : null;
       client.room = room;
       client.admin = room.players.size === 0; // first player = creator = admin
       room.players.set(client.id, client);
@@ -134,6 +135,13 @@ wss.on('connection', (ws) => {
       const text = String(msg.text || '').trim().slice(0, 200);
       if (!text) return;
       broadcast(room, { type: 'chat', from: client.id, name: client.name, text, at: Date.now() });
+      return;
+    }
+
+    if (msg.type === 'skin') {
+      client.skin = typeof msg.skin === 'string' ? msg.skin.slice(0, 20) : null;
+      broadcast(room, { type: 'player_skin', id: client.id, skin: client.skin });
+      sendPlayerList(room);
       return;
     }
 

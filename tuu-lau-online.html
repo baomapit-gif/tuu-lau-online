@@ -274,6 +274,19 @@
             <button class="dotBtn" type="button" data-color="#3b3b42" style="background:#3b3b42" title="Dạ hành y"></button>
           </div>
         </div>
+        <div class="field">
+          <label>Nhân vật 2D (quán 3D, nhân vật 2D)</label>
+          <div id="skinRow" style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="pBtn skinBtn on" type="button" data-skin="" style="min-height:64px">3D gốc</button>
+            <button class="pBtn skinBtn" type="button" data-skin="tieunhi" title="Tiểu Nhị"><img src="characters/tieunhi.png" alt="Tiểu Nhị" style="height:64px;width:auto;display:block"><span>Tiểu Nhị</span></button>
+            <button class="pBtn skinBtn" type="button" data-skin="phapsu" title="Pháp Sư"><img src="characters/phapsu.png" alt="Pháp Sư" style="height:64px;width:auto;display:block"><span>Pháp Sư</span></button>
+            <button class="pBtn skinBtn" type="button" data-skin="meovosi" title="Mèo Võ Sĩ"><img src="characters/meovosi.png" alt="Mèo Võ Sĩ" style="height:64px;width:auto;display:block"><span>Mèo Võ Sĩ</span></button>
+            <button class="pBtn skinBtn" type="button" data-skin="kiemkhach" title="Kiếm Khách"><img src="characters/kiemkhach.png" alt="Kiếm Khách" style="height:64px;width:auto;display:block"><span>Kiếm Khách</span></button>
+            <button class="pBtn skinBtn" type="button" data-skin="thaigiam" title="Thái Giám"><img src="characters/thaigiam.png" alt="Thái Giám" style="height:64px;width:auto;display:block"><span>Thái Giám</span></button>
+            <button class="pBtn skinBtn" type="button" data-skin="caibang" title="Cái Bang"><img src="characters/caibang.png" alt="Cái Bang" style="height:64px;width:auto;display:block"><span>Cái Bang</span></button>
+          </div>
+          <p style="font-size:13px;opacity:.85">Chọn 1 con 2D thì nhân vật của mày đổi thành ảnh đó, đi lại vẫn nhún theo bước chân, người khác trong phòng cũng thấy đúng con mày chọn. Tiểu Nhị riêng còn làm NPC phục vụ, có 3 con đi lại trong quán, không cần chọn.</p>
+        </div>
         <div class="btnRow">
           <button class="pBtn primary" id="charEnterBtn" type="button">Bước vào giang hồ</button>
         </div>
@@ -1045,7 +1058,75 @@
     scene.add(player);
     /* ONLINE HOOK (core only): expose scene/player/facing to the online layer.
        Solo play is unchanged when the online panel is never opened. */
-    window.__TL_ONLINE = { scene: scene, player: player, getFacing: function(){ return facing; } };
+    /* ================= 2D characters in 3D room (billboard sprites) ================= */
+    var SKINS = [
+      { id:'tieunhi', name:'Tiểu Nhị', file:'characters/tieunhi.png', aspect:709/900 },
+      { id:'phapsu', name:'Pháp Sư', file:'characters/phapsu.png', aspect:679/900 },
+      { id:'meovosi', name:'Mèo Võ Sĩ', file:'characters/meovosi.png', aspect:692/900 },
+      { id:'kiemkhach', name:'Kiếm Khách', file:'characters/kiemkhach.png', aspect:720/900 },
+      { id:'thaigiam', name:'Thái Giám', file:'characters/thaigiam.png', aspect:692/900 },
+      { id:'caibang', name:'Cái Bang', file:'characters/caibang.png', aspect:568/900 }
+    ];
+    var skinTexCache = {};
+    function loadSkinTexture(file){
+      if (!skinTexCache[file]) {
+        var tx = new THREE.TextureLoader().load(file);
+        if (THREE.SRGBColorSpace) tx.colorSpace = THREE.SRGBColorSpace;
+        skinTexCache[file] = tx;
+      }
+      return skinTexCache[file];
+    }
+    function makeSkinSprite(skin, h){
+      var sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: loadSkinTexture(skin.file), transparent: true, depthWrite: false }));
+      sp.scale.set(h * skin.aspect, h, 1);
+      return sp;
+    }
+    var currentSkin = null, playerSprite = null;
+    function setSkin(id){
+      currentSkin = null;
+      if (playerSprite) { player.remove(playerSprite); playerSprite = null; }
+      pBody.visible = true;
+      if (!id) return;
+      var skin = null;
+      for (var i=0;i<SKINS.length;i++) if (SKINS[i].id === id) skin = SKINS[i];
+      if (!skin) return;
+      currentSkin = skin;
+      playerSprite = makeSkinSprite(skin, 1.9);
+      playerSprite.position.y = 0.95;
+      player.add(playerSprite);
+      pBody.visible = false;
+    }
+    /* Tiểu Nhị NPC phục vụ: 3 clone đi qua đi lại 3 lối đi, không xuyên bàn.
+       Lối đi ngang, tránh bàn ở z=-3.4, 4.6, 5.9 và khu DJ ở z<-5.3. */
+    function makeTextSprite(text){
+      var c = document.createElement('canvas'); c.width = 256; c.height = 64;
+      var ctx = c.getContext('2d');
+      ctx.font = 'bold 28px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = 'rgba(20,10,6,0.75)'; ctx.fillRect(0, 8, 256, 48);
+      ctx.fillStyle = '#ffe2ae'; ctx.fillText(text, 128, 32);
+      var tex = new THREE.CanvasTexture(c);
+      var sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+      sp.scale.set(1.1, 0.28, 1); return sp;
+    }
+    var npcTieunhi = [];
+    (function spawnTieunhiNpcs(){
+      var tieunhi = SKINS[0];
+      var routes = [
+        { z: 0.5, x1: -9, x2: 9, speed: 1.6, x: -9, dir: 1, phase: 0 },
+        { z: -2.0, x1: -9, x2: 9, speed: 1.3, x: 9, dir: -1, phase: 2 },
+        { z: 2.5, x1: -8, x2: 8, speed: 1.0, x: 0, dir: 1, phase: 4 }
+      ];
+      routes.forEach(function(r){
+        var sp = makeSkinSprite(tieunhi, 1.9);
+        sp.position.set(r.x, 0.95, r.z);
+        scene.add(sp);
+        var lab = makeTextSprite('Tiểu Nhị');
+        lab.position.set(r.x, 2.05, r.z);
+        scene.add(lab);
+        npcTieunhi.push({ sp: sp, lab: lab, r: r });
+      });
+    })();
+    window.__TL_ONLINE = { scene: scene, player: player, getFacing: function(){ return facing; }, setSkin: setSkin, getSkin: function(){ return currentSkin ? currentSkin.id : null; }, SKINS: SKINS, makeSkinSprite: makeSkinSprite };
 
     /* ================= Music notes + balloons ================= */
     function noteTexture(){
@@ -1360,6 +1441,15 @@
       b.classList.add('on');
       outfitMat.color.set(b.getAttribute('data-color'));
     });
+    $('skinRow').addEventListener('click', function(e){
+      var b = e.target.closest('.skinBtn'); if (!b) return;
+      var btns = $('skinRow').querySelectorAll('.skinBtn');
+      for (var i=0;i<btns.length;i++) btns[i].classList.remove('on');
+      b.classList.add('on');
+      var sid = b.getAttribute('data-skin') || null;
+      setSkin(sid);
+      if (typeof window.__TL_ON_SKIN === 'function') window.__TL_ON_SKIN(sid);
+    });
     $('charEnterBtn').addEventListener('click', function(){
       var nm = $('nameInput').value.trim() || 'Tiểu Long Bao';
       $('meName').textContent = nm;
@@ -1539,6 +1629,17 @@
         var bobY = moving ? Math.abs(Math.sin(wp)) * 0.045 : 0;
         var beatBob = bobT > 0 ? Math.sin((0.22 - bobT) / 0.22 * Math.PI) * 0.07 : 0;
         pBody.position.y = sitDrop + bobY + danceBounce + beatBob + jumpY;
+        if (playerSprite) playerSprite.position.y = 0.95 + sitDrop + bobY + danceBounce + beatBob + jumpY;
+        npcTieunhi.forEach(function(n){
+          var r = n.r;
+          r.x += r.dir * r.speed * dt;
+          if (r.x > r.x2) { r.x = r.x2; r.dir = -1; }
+          if (r.x < r.x1) { r.x = r.x1; r.dir = 1; }
+          r.phase += dt * 7;
+          var nb = Math.abs(Math.sin(r.phase)) * 0.05;
+          n.sp.position.set(r.x, 0.95 + nb, r.z);
+          n.lab.position.set(r.x, 2.05 + nb, r.z);
+        });
         pBody.rotation.y = spin;
         player.rotation.y = facing;
 
@@ -1682,10 +1783,22 @@
     var sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
     sp.scale.set(1.7, 0.42, 1); sp.position.y = 2.15; return sp;
   }
-  function makeRemote(name, colorIdx){
+  function makeRemote(name, colorIdx, skinId){
+    var g = new THREE.Group();
+    var hook0 = window.__TL_ONLINE;
+    if (skinId && hook0 && hook0.makeSkinSprite && hook0.SKINS) {
+      var skin = null;
+      for (var si=0; si<hook0.SKINS.length; si++) if (hook0.SKINS[si].id === skinId) skin = hook0.SKINS[si];
+      if (skin) {
+        var sp = hook0.makeSkinSprite(skin, 1.9);
+        sp.position.y = 0.95; g.add(sp);
+        var label = labelSprite(name, colorIdx); g.add(label);
+        g.userData.walk = { sprite: true, phase: 0 };
+        return g;
+      }
+    }
     // Minimal chibi, same palette/style as the local character, no new assets:
     // red-ish outfit capsule, skin head, dark hair, red headband. No sword/apron/decoration.
-    var g = new THREE.Group();
     var mat = function(c){ return new THREE.MeshStandardMaterial({ color: c, roughness: 0.6 }); };
     var skin = mat(0xf2c49b), hairM = mat(0x3a2a1e), outfit = mat(COLORS[colorIdx % COLORS.length]);
     var torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.26, 0.4, 6, 18), outfit); torso.position.y = 0.82; g.add(torso);
@@ -1722,15 +1835,20 @@
     });
   }
   function ensureRemote(p){
-    if (p.id === myId || remotes[p.id]) return;
+    if (p.id === myId) return;
+    if (remotes[p.id] && remotes[p.id].skin === (p.skin || null)) return;
+    if (remotes[p.id]) removeRemote(p.id);
     var hook = window.__TL_ONLINE;
     if (!hook || !hook.scene) return;
     var colorIdx = Object.keys(remotes).length + 1;
-    var g = makeRemote(p.name, colorIdx);
+    var g = makeRemote(p.name, colorIdx, p.skin || null);
     g.position.set(p.x || 0, 0, p.z || 2.6); g.rotation.y = p.ry || Math.PI;
     hook.scene.add(g);
-    remotes[p.id] = { group: g, tx: p.x || 0, tz: p.z || 2.6, try_: p.ry || Math.PI, name: p.name, walk: g.userData.walk };
+    remotes[p.id] = { group: g, tx: p.x || 0, tz: p.z || 2.6, try_: p.ry || Math.PI, name: p.name, walk: g.userData.walk, skin: p.skin || null };
   }
+  window.__TL_ON_SKIN = function(sid){
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'skin', skin: sid || null }));
+  };
   function removeRemote(id){
     var r = remotes[id]; if (!r) return;
     var hook = window.__TL_ONLINE; if (hook && hook.scene) hook.scene.remove(r.group);
@@ -1759,7 +1877,10 @@
     var url = $('olServer').value.trim() || defaultWsUrl();
     status('Đang kết nối...');
     ws = new WebSocket(url);
-    ws.onopen = function(){ ws.send(JSON.stringify({ type: 'join', name: myName, room: myRoom })); };
+    ws.onopen = function(){
+      var hook = window.__TL_ONLINE;
+      ws.send(JSON.stringify({ type: 'join', name: myName, room: myRoom, skin: hook && hook.getSkin ? hook.getSkin() : null }));
+    };
     ws.onmessage = function(ev){
       var m; try { m = JSON.parse(ev.data); } catch(e){ return; }
       if (m.type === 'welcome'){
@@ -1768,6 +1889,7 @@
         status('Đã vào phòng ' + m.room + (isAdmin ? ' — bạn là ADMIN.' : ' — khách.'));
         m.players.forEach(ensureRemote); renderPlayers(m.players);
       } else if (m.type === 'player_joined'){ ensureRemote(m.player); chatLine('Hệ thống', m.player.name + ' đã vào phòng.'); }
+      else if (m.type === 'player_skin'){ var pr = remotes[m.id]; if (pr) { var fake = { id: m.id, name: pr.name, x: pr.group.position.x, z: pr.group.position.z, ry: pr.group.rotation.y, skin: m.skin || null }; ensureRemote(fake); } }
       else if (m.type === 'player_list'){ renderPlayers(m.players); m.players.forEach(ensureRemote); }
       else if (m.type === 'player_left'){ removeRemote(m.id); chatLine('Hệ thống', (m.name || 'Một người') + ' đã rời phòng.'); }
       else if (m.type === 'move'){ var r = remotes[m.id]; if (r){ r.tx = m.x; r.tz = m.z; r.try_ = m.ry; } }
@@ -1844,6 +1966,11 @@
       while (diff > Math.PI) diff -= Math.PI * 2; while (diff < -Math.PI) diff += Math.PI * 2;
       r.group.rotation.y += diff * 0.25;
       var w = r.walk; if (!w) return;
+      if (w.sprite) {
+        if (moving) { w.phase += 0.3; r.group.position.y = Math.abs(Math.sin(w.phase)) * 0.045; }
+        else { r.group.position.y = 0; }
+        return;
+      }
       if (moving) {
         w.phase += 0.3;
         var s = Math.sin(w.phase);
